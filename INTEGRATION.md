@@ -80,6 +80,6 @@ npm install
 
 ```bash
 set MR_MCP_GITLAB_TOKEN=ваш_токен
-set MR_MCP_GITLAB_HOST=https://code.simplex48.ru
+set MR_MCP_GITLAB_HOST=https://example.gitlab.ru
 npx -y @modelcontextprotocol/inspector npm start
 ```
