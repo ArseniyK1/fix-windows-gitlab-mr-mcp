@@ -6,6 +6,8 @@
 
 # 🚀 GitLab MR MCP
 
+> **Интеграция в Cursor (локальный GitLab):** см. [INTEGRATION.md](INTEGRATION.md)
+
 A Model Context Protocol (MCP) server for interacting with GitLab merge requests and issues.
 
 ## 📌 Overview
