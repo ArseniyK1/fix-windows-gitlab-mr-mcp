@@ -10,7 +10,7 @@ npm install
 
 ## 2. Токен GitLab
 
-1. Создайте Personal Access Token: https://code.simplex48.ru/-/profile/personal_access_tokens
+1. Создайте Personal Access Token: https://example.gitlab.ru/-/profile/personal_access_tokens
 2. Scope: `api` или `read_api` (для комментариев и правок MR нужен `api`).
 
 Системные переменные Windows **не нужны** — токен задаётся в конфиге MCP.
