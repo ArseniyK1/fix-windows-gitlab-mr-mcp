@@ -12,6 +12,7 @@ const mockGitlabInstance = {
         all: jest.fn(),
         show: jest.fn(),
         allDiffs: jest.fn(),
+        showChanges: jest.fn(),
         edit: jest.fn(),
     },
     MergeRequestDiscussions: {
@@ -156,6 +157,38 @@ describe('GitLab MR MCP Tools', () => {
             expect(mockGitlabInstance.MergeRequestDiscussions.create).toHaveBeenCalledWith(123, 1, 'test comment');
             const content = JSON.parse(result.content[0].text);
             expect(content.id).toBe(1);
+        });
+    });
+
+    describe('get_merge_request_diff', () => {
+        it('should return diffs from allDiffs when available', async () => {
+            const mockDiffs = [{ old_path: 'a.js', new_path: 'a.js', diff: '@@ -1 +1 @@' }];
+            mockGitlabInstance.MergeRequests.allDiffs.mockResolvedValue(mockDiffs);
+
+            const handler = getToolHandler('get_merge_request_diff');
+            const result = await handler({ project_id: 123, merge_request_iid: 1 });
+
+            expect(mockGitlabInstance.MergeRequests.allDiffs).toHaveBeenCalledWith(123, 1);
+            expect(mockGitlabInstance.MergeRequests.showChanges).not.toHaveBeenCalled();
+            const content = JSON.parse(result.content[0].text);
+            expect(content).toHaveLength(1);
+            expect(content[0].old_path).toBe('a.js');
+        });
+
+        it('should fall back to showChanges when allDiffs returns 404', async () => {
+            const notFoundError = new Error('404 Not Found');
+            notFoundError.cause = { description: '404 Not Found' };
+            mockGitlabInstance.MergeRequests.allDiffs.mockRejectedValue(notFoundError);
+            mockGitlabInstance.MergeRequests.showChanges.mockResolvedValue({
+                changes: [{ old_path: 'b.js', new_path: 'b.js', diff: '@@ -1 +2 @@' }],
+            });
+
+            const handler = getToolHandler('get_merge_request_diff');
+            const result = await handler({ project_id: 123, merge_request_iid: 170 });
+
+            expect(mockGitlabInstance.MergeRequests.showChanges).toHaveBeenCalledWith(123, 170);
+            const content = JSON.parse(result.content[0].text);
+            expect(content[0].old_path).toBe('b.js');
         });
     });
 

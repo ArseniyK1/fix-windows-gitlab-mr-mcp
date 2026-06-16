@@ -243,9 +243,20 @@ server.tool(
   },
   async ({ project_id, merge_request_iid }) => {
     try {
-      const diff = await api.MergeRequests.allDiffs(project_id, merge_request_iid);
-      const diffText = Array.isArray(diff) && diff.length > 0
-        ? JSON.stringify(diff, null, 2)
+      let changes;
+      try {
+        changes = await api.MergeRequests.allDiffs(project_id, merge_request_iid);
+      } catch (error) {
+        // Older GitLab instances expose /changes but not /diffs (404).
+        if (error.cause?.description !== "404 Not Found") {
+          throw error;
+        }
+        const response = await api.MergeRequests.showChanges(project_id, merge_request_iid);
+        changes = response.changes;
+      }
+
+      const diffText = Array.isArray(changes) && changes.length > 0
+        ? JSON.stringify(changes, null, 2)
         : "No diff data available for this merge request.";
       return {
         content: [{ type: "text", text: diffText }],
