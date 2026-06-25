@@ -18,6 +18,11 @@ const mockGitlabInstance = {
     MergeRequestDiscussions: {
         all: jest.fn(),
         create: jest.fn(),
+        resolve: jest.fn(),
+    },
+    MergeRequestApprovals: {
+        approve: jest.fn(),
+        unapprove: jest.fn(),
     },
     Issues: {
         show: jest.fn(),
@@ -230,6 +235,119 @@ describe('GitLab MR MCP Tools', () => {
         });
     });
 
+    describe('get_merge_request_comments', () => {
+        it('should include discussion_id for unresolved notes', async () => {
+            mockGitlabInstance.MergeRequestDiscussions.all.mockResolvedValue([
+                {
+                    id: 'discussion-1',
+                    notes: [
+                        {
+                            id: 10,
+                            noteable_id: 1,
+                            body: 'inline comment',
+                            author: { name: 'Reviewer' },
+                            type: 'DiffNote',
+                            resolved: false,
+                            position: { new_path: 'src/a.ts' },
+                        },
+                    ],
+                },
+            ]);
+
+            const handler = getToolHandler('get_merge_request_comments');
+            const result = await handler({ project_id: 123, merge_request_iid: 1, verbose: false });
+
+            const content = JSON.parse(result.content[0].text);
+            expect(content.diffNotes).toHaveLength(1);
+            expect(content.diffNotes[0].discussion_id).toBe('discussion-1');
+            expect(content.diffNotes[0].id).toBe(10);
+        });
+    });
+
+    describe('resolve_merge_request_discussion', () => {
+        it('should resolve a discussion by discussion_id', async () => {
+            mockGitlabInstance.MergeRequestDiscussions.resolve.mockResolvedValue({ id: 'discussion-1' });
+
+            const handler = getToolHandler('resolve_merge_request_discussion');
+            const result = await handler({
+                project_id: 123,
+                merge_request_iid: 1,
+                discussion_id: 'discussion-1',
+                resolved: true,
+            });
+
+            expect(mockGitlabInstance.MergeRequestDiscussions.resolve).toHaveBeenCalledWith(
+                123,
+                1,
+                'discussion-1',
+                true,
+            );
+            const content = JSON.parse(result.content[0].text);
+            expect(content.discussion_id).toBe('discussion-1');
+            expect(content.resolved).toBe(true);
+        });
+
+        it('should resolve a discussion by note_id', async () => {
+            mockGitlabInstance.MergeRequestDiscussions.all.mockResolvedValue([
+                {
+                    id: 'discussion-2',
+                    notes: [{ id: 42, resolved: false }],
+                },
+            ]);
+            mockGitlabInstance.MergeRequestDiscussions.resolve.mockResolvedValue({ id: 'discussion-2' });
+
+            const handler = getToolHandler('resolve_merge_request_discussion');
+            await handler({
+                project_id: 123,
+                merge_request_iid: 1,
+                note_id: 42,
+                resolved: true,
+            });
+
+            expect(mockGitlabInstance.MergeRequestDiscussions.resolve).toHaveBeenCalledWith(
+                123,
+                1,
+                'discussion-2',
+                true,
+            );
+        });
+    });
+
+    describe('resolve_all_merge_request_discussions', () => {
+        it('should resolve all unresolved discussions', async () => {
+            mockGitlabInstance.MergeRequestDiscussions.all.mockResolvedValue([
+                {
+                    id: 'discussion-1',
+                    notes: [{ id: 1, type: 'DiffNote', resolved: false }],
+                },
+                {
+                    id: 'discussion-2',
+                    notes: [{ id: 2, type: 'DiscussionNote', resolved: true }],
+                },
+            ]);
+            mockGitlabInstance.MergeRequestDiscussions.resolve.mockResolvedValue({ id: 'discussion-1' });
+
+            const handler = getToolHandler('resolve_all_merge_request_discussions');
+            const result = await handler({
+                project_id: 123,
+                merge_request_iid: 1,
+                resolved: true,
+                only_unresolved: true,
+                only_diff_threads: false,
+            });
+
+            expect(mockGitlabInstance.MergeRequestDiscussions.resolve).toHaveBeenCalledTimes(1);
+            expect(mockGitlabInstance.MergeRequestDiscussions.resolve).toHaveBeenCalledWith(
+                123,
+                1,
+                'discussion-1',
+                true,
+            );
+            const content = JSON.parse(result.content[0].text);
+            expect(content.count).toBe(1);
+        });
+    });
+
     describe('set_merge_request_title', () => {
         it('should update MR title', async () => {
             const mockMr = { iid: 1, title: 'New Title' };
@@ -241,6 +359,49 @@ describe('GitLab MR MCP Tools', () => {
             expect(mockGitlabInstance.MergeRequests.edit).toHaveBeenCalledWith(123, 1, { title: 'New Title' });
             const content = JSON.parse(result.content[0].text);
             expect(content.title).toBe('New Title');
+        });
+    });
+
+    describe('approve_merge_request', () => {
+        it('should approve a merge request', async () => {
+            const mockApproval = { id: 1, approved_by: [{ user: { name: 'Reviewer' } }] };
+            mockGitlabInstance.MergeRequestApprovals.approve.mockResolvedValue(mockApproval);
+
+            const handler = getToolHandler('approve_merge_request');
+            const result = await handler({ project_id: 123, merge_request_iid: 1 });
+
+            expect(mockGitlabInstance.MergeRequestApprovals.approve).toHaveBeenCalledWith(123, 1, undefined);
+            const content = JSON.parse(result.content[0].text);
+            expect(content.approved).toBe(true);
+            expect(content.merge_request_iid).toBe(1);
+        });
+
+        it('should approve with optional sha', async () => {
+            mockGitlabInstance.MergeRequestApprovals.approve.mockResolvedValue({ id: 1 });
+
+            const handler = getToolHandler('approve_merge_request');
+            await handler({
+                project_id: 123,
+                merge_request_iid: 1,
+                sha: 'abc123',
+            });
+
+            expect(mockGitlabInstance.MergeRequestApprovals.approve).toHaveBeenCalledWith(123, 1, {
+                sha: 'abc123',
+            });
+        });
+    });
+
+    describe('unapprove_merge_request', () => {
+        it('should revoke MR approval', async () => {
+            mockGitlabInstance.MergeRequestApprovals.unapprove.mockResolvedValue(undefined);
+
+            const handler = getToolHandler('unapprove_merge_request');
+            const result = await handler({ project_id: 123, merge_request_iid: 1 });
+
+            expect(mockGitlabInstance.MergeRequestApprovals.unapprove).toHaveBeenCalledWith(123, 1);
+            const content = JSON.parse(result.content[0].text);
+            expect(content.approved).toBe(false);
         });
     });
 
